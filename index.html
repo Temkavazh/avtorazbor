@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Пример сценария: ИИ разбирает обращения клиентов, заводит сделку в Битрикс24 или amoCRM и готовит ответ.">
+<title>Авторазбор обращений</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#F2F3EF;--panel:#FFFFFF;--sunk:#E9EBE5;--ink:#15171C;--muted:#5B5F67;--line:#D3D6CE;
+  --accent:#2E4FE0;--accent-soft:#DFE5FD;
+  --ok:#1E7249;--ok-soft:#DAEEE2;--warn:#8A5A06;--warn-soft:#F7EACB;--bad:#B3261E;--bad-soft:#F8DEDB;--mid:#4A4E57;--mid-soft:#E4E6E1;
+  --f-display:"Unbounded","Onest",system-ui,sans-serif;
+  --f-body:"Onest",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#101216;--panel:#1A1D23;--sunk:#14161B;--ink:#E8EAEE;--muted:#9BA1AC;--line:#2D313A;
+  --accent:#7F90FF;--accent-soft:#262D55;
+  --ok:#5FCB91;--ok-soft:#163326;--warn:#E8B85A;--warn-soft:#3A2D10;--bad:#F08A80;--bad-soft:#3D1A17;--mid:#B7BCC6;--mid-soft:#262A31;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#101216;--panel:#1A1D23;--sunk:#14161B;--ink:#E8EAEE;--muted:#9BA1AC;--line:#2D313A;
+  --accent:#7F90FF;--accent-soft:#262D55;
+  --ok:#5FCB91;--ok-soft:#163326;--warn:#E8B85A;--warn-soft:#3A2D10;--bad:#F08A80;--bad-soft:#3D1A17;--mid:#B7BCC6;--mid-soft:#262A31;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.6}
+.wrap{max-width:1040px;margin:0 auto;padding-inline:20px;padding-block:48px 64px;display:flex;flex-direction:column;gap:44px}
+.eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 12px}
+h1{font-family:var(--f-display);font-weight:500;font-size:clamp(28px,5.2vw,44px);line-height:1.12;letter-spacing:-.01em;margin:0 0 14px;text-wrap:balance}
+h2{font-family:var(--f-display);font-weight:500;font-size:20px;line-height:1.25;margin:0 0 18px;text-wrap:balance}
+.lede{margin:0;max-width:64ch;color:var(--muted);font-size:17px}
+.spec{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin:24px 0 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.spec div{padding:12px 14px 12px 0;min-width:0}
+.spec dt{font-size:12px;color:var(--muted)}
+.spec dd{margin:2px 0 0;font-size:14px;font-weight:500}
+
+.note{margin:0 0 16px;font-size:14px;color:var(--muted)}
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 24px;margin:0 0 16px}
+.tool{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.tool > span{font-size:14px;color:var(--muted)}
+.seg{display:inline-flex;flex-wrap:wrap;gap:2px;padding:3px;background:var(--panel);border:1px solid var(--line);border-radius:10px}
+.seg button{font:500 13px/1 var(--f-body);color:var(--muted);background:transparent;border:0;border-radius:7px;padding:8px 14px;cursor:pointer}
+.seg button:hover{color:var(--ink)}
+.seg button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent)}
+
+.board{display:grid;grid-template-columns:320px minmax(0,1fr);gap:16px;align-items:start}
+.inbox{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.msg{width:100%;text-align:left;font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;display:flex;flex-direction:column;gap:6px}
+.msg:hover{border-color:var(--muted)}
+.msg[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
+.msg-top{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+.src{font-family:var(--f-mono);font-size:11px;letter-spacing:.02em;padding:2px 7px;border-radius:6px;background:var(--sunk);color:var(--ink)}
+.msg-top time{margin-left:auto;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.msg-text{font-size:14px;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+:is(button,a):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.case{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:6px 20px}
+.steps{list-style:none;margin:0;padding:0}
+.step{display:grid;grid-template-columns:28px minmax(0,1fr);gap:14px;padding:16px 0;border-bottom:1px solid var(--line);transition:opacity .35s ease,transform .35s ease}
+.step:last-child{border-bottom:0}
+.step.wait{opacity:.2;transform:translateY(4px)}
+.num{width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font:500 13px/28px var(--f-mono);text-align:center}
+.step h3{margin:3px 0 8px;font-size:14px;font-weight:600}
+.quote{margin:0;font-size:15px;padding:10px 12px;background:var(--sunk);border-radius:8px}
+.masked{margin:8px 0 0;font-size:13px;color:var(--muted)}
+.masked code{font-family:var(--f-mono);font-size:12px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.chip{font-size:12px;font-weight:500;padding:3px 9px;border-radius:999px;background:var(--mid-soft);color:var(--mid)}
+.chip.ok{background:var(--ok-soft);color:var(--ok)}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}
+.chip.bad{background:var(--bad-soft);color:var(--bad)}
+.chip.topic{background:var(--accent-soft);color:var(--accent)}
+.kv{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 16px;margin:0;font-size:14px}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0;font-weight:500;overflow-wrap:anywhere}
+.reply{margin:0 0 10px;font-size:15px;padding:12px 14px;border:1px dashed var(--line);border-radius:8px}
+.rule{margin:0;font-size:14px;color:var(--muted)}
+.api{margin:12px 0 0;display:flex;flex-direction:column;gap:4px}
+.api span{font-size:12px;color:var(--muted)}
+.api code{align-self:flex-start;max-width:100%;font-family:var(--f-mono);font-size:12px;color:var(--ink);background:var(--sunk);border-radius:6px;padding:3px 8px;overflow-wrap:anywhere}
+
+.flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:8px;margin-bottom:22px}
+.node{flex:1 1 130px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:0}
+.node b{display:block;font-size:14px;font-weight:600}
+.node span{display:block;font-size:12px;color:var(--muted);line-height:1.4;margin-top:2px}
+.arrow{align-self:center;color:var(--muted);font-family:var(--f-mono);font-size:14px}
+.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px}
+.notes h3{font-size:15px;font-weight:600;margin:0 0 6px}
+.notes p{margin:0;color:var(--muted);font-size:15px}
+footer{border-top:1px solid var(--line);padding-top:20px;font-size:14px;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px 16px;justify-content:space-between}
+footer strong{color:var(--ink);font-weight:600}
+
+@media (max-width:820px){.board{grid-template-columns:minmax(0,1fr)}.inbox{flex-direction:row;overflow-x:auto;padding-bottom:4px}.inbox li{flex:0 0 250px}.arrow{display:none}}
+@media (max-width:520px){.wrap{padding-block:32px 48px;gap:36px}.case{padding:4px 14px}}
+@media (prefers-reduced-motion:reduce){.step{transition:none}}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header>
+    <p class="eyebrow">Портфолио · Автоматизация с ИИ</p>
+    <h1>Авторазбор обращений</h1>
+    <p class="lede">Так работает сценарий, который я собираю на n8n и OpenAI. Обращение клиента приходит из почты, мессенджера, с сайта, маркетплейса или из звонка. ИИ определяет тему и срочность, заводит сделку в Битрикс24 или amoCRM и готовит ответ. Простые случаи закрываются сами, спорные уходят человеку.</p>
+    <dl class="spec">
+      <div><dt>Каналы</dt><dd>почта, мессенджеры, сайт, звонки</dd></div>
+      <div><dt>Связка</dt><dd>n8n → OpenAI → Битрикс24 или amoCRM</dd></div>
+      <div><dt>Спорные случаи</dt><dd>решает менеджер</dd></div>
+      <div><dt>Личные данные</dt><dd>не уходят в модель</dd></div>
+    </dl>
+  </header>
+
+  <section aria-labelledby="demo-h">
+    <h2 id="demo-h">Как это выглядит на реальных типах обращений</h2>
+    <p class="note">Пример на тестовых данных. Выберите отрасль, CRM и обращение — справа будет видно, что с ним делает сценарий.</p>
+    <div class="toolbar">
+      <div class="tool">
+        <span id="ind-label">Отрасль:</span>
+        <div class="seg" role="group" aria-labelledby="ind-label" id="ind-seg">
+          <button type="button" id="ind-shop" aria-pressed="true">Интернет-магазин</button>
+          <button type="button" id="ind-b2b" aria-pressed="false">B2B-поставки</button>
+          <button type="button" id="ind-service" aria-pressed="false">Сервисная компания</button>
+        </div>
+      </div>
+      <div class="tool">
+        <span id="crm-label">CRM:</span>
+        <div class="seg" role="group" aria-labelledby="crm-label">
+          <button type="button" id="crm-bitrix" aria-pressed="true">Битрикс24</button>
+          <button type="button" id="crm-amo" aria-pressed="false">amoCRM</button>
+        </div>
+      </div>
+    </div>
+    <div class="board">
+      <ul class="inbox" id="inbox" aria-label="Входящие обращения"></ul>
+      <article class="case" id="case" aria-live="polite"></article>
+    </div>
+  </section>
+
+  <section aria-labelledby="how-h">
+    <h2 id="how-h">Из чего собрано</h2>
+    <div class="flow" aria-label="Схема сценария">
+      <div class="node"><b>Канал</b><span>почта, мессенджеры, сайт, звонки</span></div><span class="arrow" aria-hidden="true">→</span>
+      <div class="node"><b>n8n</b><span>приём и обезличивание</span></div><span class="arrow" aria-hidden="true">→</span>
+      <div class="node"><b>OpenAI</b><span>тема, тон, срочность, поля</span></div><span class="arrow" aria-hidden="true">→</span>
+      <div class="node"><b>Проверки</b><span>правила, склад, прайс, график</span></div><span class="arrow" aria-hidden="true">→</span>
+      <div class="node"><b>Битрикс24 / amoCRM</b><span>сделка, задача, комментарий</span></div><span class="arrow" aria-hidden="true">→</span>
+      <div class="node"><b>Менеджер</b><span>проверяет спорное</span></div>
+    </div>
+    <div class="notes">
+      <div><h3>Модель не решает за людей</h3><p>Негатив, претензии, цены и всё непонятное ИИ только готовит, а отправляет человек. Сам сценарий закрывает типовые вопросы и благодарности.</p></div>
+      <div><h3>Личные данные остаются дома</h3><p>Имена, телефоны и адреса заменяются метками до отправки в модель. В ответ клиенту они подставляются обратно из CRM.</p></div>
+      <div><h3>Каждый шаг в журнале</h3><p>Если что-то сломалось, видно, на каком шаге. Сценарий перезапускается с места остановки, без дублей в CRM.</p></div>
+    </div>
+  </section>
+
+  <footer>
+    <span><strong>Артем Важенин</strong> — автоматизация процессов и внедрение ИИ</span>
+    <span>Пример на тестовых данных, без реальных клиентов</span>
+  </footer>
+</main>
+
+<script>
+(function(){
+  var sets = {
+    shop: [
+      {src:'Маркетплейс', kind:'Отзыв, 2 звезды', time:'09:14',
+       text:'Сковорода пришла с вмятиной на дне, хотя коробка целая. Артикул 20931457',
+       topic:'Брак', tone:['Негатив','bad'], urgency:['Срочно','bad'],
+       fields:[['Товар','сковорода'],['Артикул','20931457'],['Суть','вмятина при целой упаковке']],
+       crm:{id:4812, pipe:'Претензии', stage:'Новая', owner:'Отдел качества', topic:'брак', note:'Разбор ИИ: упаковка целая — вероятно, брак до отгрузки', task:'Проверить партию по артикулу 20931457'},
+       reply:'Здравствуйте! Жаль, что сковорода пришла повреждённой. Оформите возврат через маркетплейс — новую отправим сразу, как увидим заявку. Артикул передали в отдел качества, чтобы проверить партию.',
+       mode:['Ждёт проверки менеджера','warn'],
+       rule:'Негативный отзыв с браком: черновик готовит ИИ, отправляет менеджер. Отдельно создаётся задача отделу качества по артикулу.'},
+      {src:'Почта', kind:'Письмо', time:'09:32',
+       text:'Добрый день! Меня зовут Ирина, телефон +7 900 000-00-00. Хочу вернуть плед, не подошёл по цвету. Как это сделать? Заказ 5518-2291',
+       masked:'Добрый день! Меня зовут [имя], телефон [телефон]. Хочу вернуть плед…',
+       topic:'Возврат', tone:['Нейтрально','mid'], urgency:['Обычная','ok'],
+       fields:[['Товар','плед'],['Заказ','5518-2291'],['Причина','не подошёл цвет']],
+       crm:{id:4813, pipe:'Возвраты', stage:'Инструкция отправлена', owner:'Поддержка', topic:'возврат', note:'Клиент найден по номеру заказа'},
+       reply:'Здравствуйте, Ирина! Вернуть плед можно в личном кабинете: откройте заказ 5518-2291 и нажмите «Вернуть товар». Если нужен другой цвет — напишите, подберём и отложим.',
+       mode:['Отправлен автоматически','ok'],
+       rule:'Типовой возврат без претензии: есть шаблон и номер заказа, ответ уходит сам. Имя подставлено обратно из CRM — в модель оно не попадало.'},
+      {src:'Telegram', kind:'Сообщение', time:'10:05',
+       text:'Есть в наличии набор кастрюль «Эко», 5 предметов? Нужно до пятницы, на подарок',
+       topic:'Наличие', tone:['Нейтрально','mid'], urgency:['Срочно','bad'],
+       fields:[['Товар','набор кастрюль «Эко»'],['Срок клиента','до пятницы']],
+       crm:{id:4814, pipe:'Продажи', stage:'Консультация', owner:'Менеджер продаж', topic:'наличие, срочно', note:'Остаток на складе: 3 шт.', task:'Отложить набор до ответа клиента'},
+       reply:'Здравствуйте! Набор «Эко» из 5 предметов есть, на складе 3 штуки. Если оформите заказ сегодня до 18:00, доставим до пятницы. Отложить один для вас?',
+       mode:['Ждёт проверки менеджера','warn'],
+       rule:'Перед ответом сценарий сам проверил остаток на складе. У клиента есть срок, поэтому обращение помечено срочным и поднято наверх очереди.'},
+      {src:'Маркетплейс', kind:'Отзыв, 5 звёзд', time:'10:20',
+       text:'Отличный чайник, быстро кипятит и не шумит. Спасибо!',
+       topic:'Благодарность', tone:['Позитив','ok'], urgency:['Обычная','ok'],
+       fields:[['Товар','чайник']],
+       crm:{id:4815, pipe:'Отзывы', stage:'Закрыто', owner:'не назначен', topic:'благодарность', note:'Автоответ отправлен'},
+       reply:'Спасибо за отзыв! Рады, что чайник понравился. Будем ждать вас снова.',
+       mode:['Отправлен автоматически','ok'],
+       rule:'Пятёрки без вопросов закрываются автоответом в стиле бренда. Менеджер на них время не тратит.'},
+      {src:'Почта', kind:'Письмо', time:'11:02',
+       text:'Вы третий раз присылаете не тот размер штор. Если не решите вопрос, пишу претензию.',
+       topic:'Пересорт', tone:['Негатив','bad'], urgency:['Срочно','bad'],
+       fields:[['Повтор','третий раз'],['Риск','претензия']],
+       crm:{id:4816, pipe:'Претензии', stage:'Эскалация', owner:'Руководитель поддержки', topic:'пересорт, повтор', note:'История: 3 заказа за 2 месяца, все с пересортом', task:'Связаться с клиентом сегодня'},
+       reply:null,
+       mode:['Передано человеку','bad'],
+       rule:'Повторная ошибка и угроза претензии: ИИ сам не отвечает. Руководитель поддержки получает уведомление в Telegram со ссылкой на сделку и историей заказов.'}
+    ],
+    b2b: [
+      {src:'Почта', kind:'Запрос КП', time:'08:47',
+       text:'Добрый день. Просим КП на 40 паллет газобетона D500 с доставкой на объект в Подольск до 15 октября. Снабжение, Андрей, +7 900 000-00-00',
+       masked:'…с доставкой на объект в Подольск до 15 октября. Снабжение, [имя], [телефон]',
+       topic:'Запрос КП', tone:['Нейтрально','mid'], urgency:['Срочно','bad'],
+       fields:[['Товар','газобетон D500'],['Объём','40 паллет'],['Доставка','Подольск'],['Срок','до 15 октября']],
+       crm:{id:7120, pipe:'Опт', stage:'Новый запрос', owner:'Менеджер по опту', topic:'КП, доставка', note:'Компания найдена в базе: 2 прошлые сделки', task:'Подготовить КП до 18:00'},
+       reply:'Добрый день, Андрей! Спасибо за запрос. Газобетон D500 в нужном объёме есть, КП с доставкой в Подольск пришлём сегодня до 18:00. Подскажите, нужна ли разгрузка манипулятором?',
+       mode:['Ждёт проверки менеджера','warn'],
+       rule:'Сценарий вытащил объём, адрес и срок, нашёл компанию в CRM и поставил менеджеру задачу с дедлайном. Цену в ответ не пишет — её считает человек.'},
+      {src:'Сайт', kind:'Форма', time:'09:20',
+       text:'Где наш заказ № 7731? Обещали отгрузить вчера, бригада на объекте стоит.',
+       topic:'Статус заказа', tone:['Негатив','bad'], urgency:['Срочно','bad'],
+       fields:[['Заказ','7731'],['Проблема','сорван срок отгрузки']],
+       crm:{id:7121, pipe:'Отгрузки', stage:'Задержка', owner:'Логист', topic:'срыв срока', note:'Статус со склада: машина вышла сегодня в 09:05', task:'Сообщить клиенту номер водителя'},
+       reply:'Здравствуйте! Приносим извинения за задержку. Машина с заказом № 7731 вышла со склада сегодня в 09:05 и будет у вас ориентировочно к 13:00. Номер водителя пришлём в течение 10 минут.',
+       mode:['Ждёт проверки логиста','warn'],
+       rule:'Сценарий сам запросил статус у склада и подставил время выезда. Но срок уже сорван, поэтому ответ перед отправкой проверяет логист.'},
+      {src:'Почта', kind:'Письмо', time:'10:12',
+       text:'Направьте, пожалуйста, акт сверки за III квартал и счёт-фактуру по отгрузке от 12.09.',
+       topic:'Документы', tone:['Нейтрально','mid'], urgency:['Обычная','ok'],
+       fields:[['Документы','акт сверки, счёт-фактура'],['Период','III квартал'],['Отгрузка','от 12.09']],
+       crm:{id:7122, pipe:'Документы', stage:'Отправлено', owner:'Бухгалтерия', topic:'документы', note:'Документы сформированы в учётной системе и приложены'},
+       reply:'Добрый день! Акт сверки за III квартал и счёт-фактура по отгрузке от 12.09 во вложении. Оригиналы направим через ЭДО.',
+       mode:['Отправлен автоматически','ok'],
+       rule:'Типовой запрос документов: сценарий взял их из учётной системы и приложил к ответу. Бухгалтер получает только уведомление.'},
+      {src:'Звонок', kind:'Расшифровка', time:'11:30',
+       text:'Клиент спросил, можно ли добавить к заказу 7745 ещё 5 паллет клея и привезти всё одной машиной.',
+       topic:'Допзаказ', tone:['Позитив','ok'], urgency:['Обычная','ok'],
+       fields:[['Заказ','7745'],['Добавить','клей, 5 паллет'],['Условие','одной машиной']],
+       crm:{id:7123, pipe:'Опт', stage:'Допродажа', owner:'Менеджер по опту', topic:'допзаказ', note:'Звонок расшифрован, итог записан в сделку', task:'Проверить с логистом загрузку машины'},
+       reply:'Добрый день! Клей в нужном объёме есть. Проверяем с логистом, поместится ли всё в одну машину, — ответим в течение часа.',
+       mode:['Ждёт проверки менеджера','warn'],
+       rule:'Итог звонка записан в сделку автоматически — менеджеру не нужно ничего пересказывать. Решение по машине за логистом, поэтому ответ ждёт проверки.'},
+      {src:'Почта', kind:'Письмо', time:'14:05',
+       text:'Третья партия подряд с боем. Если не будет компенсации, прекращаем сотрудничество.',
+       topic:'Претензия', tone:['Негатив','bad'], urgency:['Срочно','bad'],
+       fields:[['Повтор','третья партия'],['Риск','потеря клиента']],
+       crm:{id:7124, pipe:'Претензии', stage:'Эскалация', owner:'Руководитель продаж', topic:'бой, повтор', note:'Ключевой клиент: 14 сделок за год', task:'Позвонить клиенту сегодня'},
+       reply:null,
+       mode:['Передано человеку','bad'],
+       rule:'Угроза ухода ключевого клиента: ИИ сам не отвечает. Руководитель продаж получает уведомление в Telegram со ссылкой на сделку и историей поставок.'}
+    ],
+    service: [
+      {src:'Сайт', kind:'Заявка', time:'08:30',
+       text:'Стиральная машина не сливает воду, на экране ошибка E21. Можно мастера сегодня? Адрес: ул. Лесная, 12, кв. 45',
+       masked:'…Можно мастера сегодня? Адрес: [адрес]',
+       topic:'Вызов мастера', tone:['Нейтрально','mid'], urgency:['Срочно','bad'],
+       fields:[['Техника','стиральная машина'],['Симптом','не сливает, ошибка E21'],['Когда','сегодня']],
+       crm:{id:3310, pipe:'Заявки', stage:'Новая', owner:'Диспетчер', topic:'ремонт, срочно', note:'Разбор ИИ: вероятно, засор фильтра или насоса', task:'Назначить мастера на сегодня'},
+       reply:'Здравствуйте! Ошибка E21 обычно означает засор фильтра или насоса. Можем приехать сегодня с 15:00 до 18:00. Подтвердите, пожалуйста, время.',
+       mode:['Ждёт проверки диспетчера','warn'],
+       rule:'Сценарий определил вероятную причину по коду ошибки и предложил ближайшее окно из графика мастеров. Выезд подтверждает диспетчер.'},
+      {src:'Telegram', kind:'Сообщение', time:'09:10',
+       text:'Сколько стоит диагностика холодильника?',
+       topic:'Вопрос о цене', tone:['Нейтрально','mid'], urgency:['Обычная','ok'],
+       fields:[['Техника','холодильник'],['Услуга','диагностика']],
+       crm:{id:3311, pipe:'Заявки', stage:'Консультация', owner:'Диспетчер', topic:'цена', note:'Цена взята из актуального прайса'},
+       reply:'Здравствуйте! Диагностика холодильника — 900 ₽. Если после неё ремонтируете у нас, диагностика бесплатная. Когда удобно, чтобы мастер приехал?',
+       mode:['Отправлен автоматически','ok'],
+       rule:'Вопрос по прайсу: ответ собран из актуального прайс-листа и уходит сам. Если клиент соглашается на выезд, сделка сразу переходит в «Заявки».'},
+      {src:'Звонок', kind:'Расшифровка', time:'11:45',
+       text:'Клиентка говорит, что после ремонта посудомойка снова течёт. Ремонт был 10 дней назад.',
+       topic:'Гарантия', tone:['Негатив','bad'], urgency:['Срочно','bad'],
+       fields:[['Техника','посудомоечная машина'],['Ремонт','10 дней назад'],['Гарантия','действует, 3 месяца']],
+       crm:{id:3312, pipe:'Гарантия', stage:'Повторный выезд', owner:'Старший мастер', topic:'гарантия, повтор', note:'Прошлый выезд: замена сливного шланга', task:'Бесплатный повторный выезд в течение 2 дней'},
+       reply:'Здравствуйте! Приносим извинения. Ремонт на гарантии, повторный выезд бесплатный. Мастер может приехать завтра с 10:00 до 13:00 — вам удобно?',
+       mode:['Ждёт проверки старшего мастера','warn'],
+       rule:'Сценарий сверил дату ремонта с гарантией и подтянул историю выезда. Случай повторный, поэтому ответ проверяет старший мастер.'},
+      {src:'Сайт', kind:'Отзыв, 5 звёзд', time:'13:20',
+       text:'Мастер приехал вовремя, всё починил за час. Спасибо!',
+       topic:'Благодарность', tone:['Позитив','ok'], urgency:['Обычная','ok'],
+       fields:[['Оценка','5 из 5']],
+       crm:{id:3313, pipe:'Отзывы', stage:'Закрыто', owner:'не назначен', topic:'благодарность', note:'Отзыв прикреплён к карточке мастера'},
+       reply:'Спасибо за отзыв! Обязательно передадим мастеру.',
+       mode:['Отправлен автоматически','ok'],
+       rule:'Хорошие отзывы закрываются автоответом и попадают в карточку мастера — пригодится при подсчёте премий.'},
+      {src:'Почта', kind:'Письмо', time:'16:40',
+       text:'Мастер не приехал, а я отпросился с работы. Требую компенсацию.',
+       topic:'Жалоба', tone:['Негатив','bad'], urgency:['Срочно','bad'],
+       fields:[['Проблема','неявка мастера'],['Требование','компенсация']],
+       crm:{id:3314, pipe:'Претензии', stage:'Эскалация', owner:'Руководитель сервиса', topic:'неявка', note:'По графику: мастера сняли с заявки, клиента не предупредили', task:'Позвонить клиенту в течение часа'},
+       reply:null,
+       mode:['Передано человеку','bad'],
+       rule:'Жалоба с требованием компенсации: ИИ сам не отвечает. Руководитель сервиса получает уведомление с историей заявки и причиной сбоя.'}
+    ]
+  };
+
+  var CRM = {
+    bitrix: {name:'Битрикс24', pipe:'Направление', stage:'Стадия', topic:'Поле «Тема»',
+      calls:function(c){ var a = ['crm.deal.add → сделка #' + c.crm.id, 'crm.timeline.comment.add']; if (c.crm.task) a.push('tasks.task.add'); return a; }},
+    amo: {name:'amoCRM', pipe:'Воронка', stage:'Этап', topic:'Теги',
+      calls:function(c){ var a = ['POST /api/v4/leads → сделка #' + c.crm.id, 'POST /api/v4/leads/' + c.crm.id + '/notes']; if (c.crm.task) a.push('POST /api/v4/tasks'); return a; }}
+  };
+  var ind = 'shop', crmSel = 'bitrix', cur = 0;
+
+  var inbox = document.getElementById('inbox');
+  var box = document.getElementById('case');
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var timers = [];
+
+  function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function kv(rows){ return '<dl class="kv">' + rows.map(function(r){ return '<dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd>'; }).join('') + '</dl>'; }
+
+  function crmBlock(c){
+    var L = CRM[crmSel];
+    var rows = [[L.pipe, c.crm.pipe], [L.stage, c.crm.stage], ['Ответственный', c.crm.owner], [L.topic, c.crm.topic], ['Комментарий', c.crm.note]];
+    if (c.crm.task) rows.push(['Задача', c.crm.task]);
+    return kv(rows) + '<div class="api"><span>Вызовы API:</span>' + L.calls(c).map(function(x){ return '<code>' + esc(x) + '</code>'; }).join('') + '</div>';
+  }
+
+  function render(c){
+    var s1 = '<blockquote class="quote">' + esc(c.text) + '</blockquote>' +
+      (c.masked ? '<p class="masked">В модель ушло: <code>' + esc(c.masked) + '</code></p>' : '<p class="masked">Личных данных в тексте нет.</p>');
+    var s2 = '<div class="chips"><span class="chip topic">' + esc(c.topic) + '</span><span class="chip ' + c.tone[1] + '">' + esc(c.tone[0]) + '</span><span class="chip ' + c.urgency[1] + '">' + esc(c.urgency[0]) + '</span></div>' + kv(c.fields);
+    var s4 = (c.reply ? '<p class="reply">' + esc(c.reply) + '</p>' : '<p class="reply">Черновик не отправляется: обращение сразу ушло руководителю.</p>') +
+      '<div class="chips"><span class="chip ' + c.mode[1] + '">' + esc(c.mode[0]) + '</span></div>';
+    var steps = [
+      ['Получено · ' + c.src + ', ' + c.time, s1],
+      ['ИИ разобрал', s2],
+      ['Сделка в ' + CRM[crmSel].name, crmBlock(c)],
+      ['Ответ клиенту', s4],
+      ['Почему так', '<p class="rule">' + esc(c.rule) + '</p>']
+    ];
+    box.innerHTML = '<ol class="steps">' + steps.map(function(st, i){
+      return '<li class="step"><span class="num">' + (i + 1) + '</span><div><h3>' + esc(st[0]) + '</h3>' + st[1] + '</div></li>';
+    }).join('') + '</ol>';
+  }
+
+  function animate(){
+    timers.forEach(clearTimeout); timers = [];
+    if (reduce) return;
+    var items = box.querySelectorAll('.step');
+    items.forEach(function(el){ el.classList.add('wait'); });
+    items.forEach(function(el, i){ timers.push(setTimeout(function(){ el.classList.remove('wait'); }, 120 + i * 320)); });
+  }
+
+  function select(i, run){
+    cur = i;
+    render(sets[ind][i]);
+    Array.prototype.forEach.call(inbox.querySelectorAll('.msg'), function(b, k){ b.setAttribute('aria-pressed', k === i ? 'true' : 'false'); });
+    if (run) animate();
+  }
+
+  function buildInbox(){
+    inbox.innerHTML = '';
+    sets[ind].forEach(function(c, i){
+      var li = document.createElement('li');
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'msg'; b.id = 'msg-' + i; b.setAttribute('aria-pressed', 'false');
+      b.innerHTML = '<span class="msg-top"><span class="src">' + esc(c.src) + '</span>' + esc(c.kind) + '<time>' + esc(c.time) + '</time></span><span class="msg-text">' + esc(c.text) + '</span>';
+      b.addEventListener('click', function(){ select(i, true); });
+      li.appendChild(b); inbox.appendChild(li);
+    });
+  }
+
+  function pressGroup(prefix, keys, active){
+    keys.forEach(function(k){ document.getElementById(prefix + k).setAttribute('aria-pressed', k === active ? 'true' : 'false'); });
+  }
+
+  ['shop', 'b2b', 'service'].forEach(function(key){
+    document.getElementById('ind-' + key).addEventListener('click', function(){
+      ind = key; pressGroup('ind-', ['shop', 'b2b', 'service'], key);
+      buildInbox(); select(0, true);
+    });
+  });
+  ['bitrix', 'amo'].forEach(function(key){
+    document.getElementById('crm-' + key).addEventListener('click', function(){
+      crmSel = key; pressGroup('crm-', ['bitrix', 'amo'], key);
+      render(sets[ind][cur]);
+    });
+  });
+
+  buildInbox();
+  select(0, false);
+})();
+</script>
+</body>
+</html>
